@@ -1,0 +1,37 @@
+{
+  "name": "repocloud",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "aws-sdk": "^2.1693.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "install": "^0.13.0",
+    "npm": "^11.16.0",
+    "passport": "^0.7.0",
+    "passport-github2": "^0.1.12",
+    "redis": "^6.0.0",
+    "simple-git": "^3.36.0",
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "@types/node": "^25.9.1",
+    "@types/passport": "^1.0.17",
+    "@types/passport-github2": "^1.2.9"
+  }
+}

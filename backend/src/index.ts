@@ -1,0 +1,104 @@
+import "dotenv/config";
+import express from "express";
+import type { Request, Response } from "express";
+import cors from "cors"
+import {simpleGit} from "simple-git"
+import generateId from "./generateRandomId.js"
+import session from "express-session";
+import passport from "passport";
+import authRoutes from "./routes/authRoutes.js";
+import "./config/passport.js";
+
+const app = express()
+
+// Session middleware setup
+app.use(session({
+  secret: process.env.SESSION_SECRET || "your-secret-key",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  credentials: true
+}))
+app.use(express.json())
+
+// Passport middleware
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Passport serialization
+passport.serializeUser((user: any, done: any) => {
+  done(null, user);
+});
+
+passport.deserializeUser((user: any, done: any) => {
+  done(null, user);
+});
+
+// Auth routes
+app.use("/auth", authRoutes);
+
+// Protected route to get current user info
+app.get("/auth/me", (req: Request, res: Response) => {
+  if (req.isAuthenticated()) {
+    const user = req.user as any;
+    res.json({
+      id: user.id,
+      username: user.username,
+      avatar_url: user.photos?.[0]?.value,
+      displayName: user.displayName,
+      email: user.emails?.[0]?.value,
+    });
+  } else {
+    res.status(401).json({ message: "Not authenticated" });
+  }
+});
+
+// Logout route
+app.post("/auth/logout", (req: Request, res: Response) => {
+  req.logout((err: any) => {
+    if (err) {
+      return res.status(500).json({ message: "Logout failed" });
+    }
+    res.json({ message: "Logged out successfully" });
+  });
+});
+
+app.post("/deploy", (req: Request, res: Response)=>{
+    const repoUrl = req.body.repoUrl; //github url
+    console.log(repoUrl)
+    const id = generateId()
+    simpleGit().clone(repoUrl,`output/${id}`)
+    res.json({
+        id:id
+    })
+})
+
+const server = app.listen(3000, () => {
+  console.log("Server running on http://localhost:3000");
+});
+
+// Handle server errors
+server.on('error', (error: any) => {
+  console.error('Server error:', error);
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});

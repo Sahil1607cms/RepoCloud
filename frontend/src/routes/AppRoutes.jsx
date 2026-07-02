@@ -1,0 +1,34 @@
+import { Routes, Route, Navigate } from "react-router-dom";
+import LandingPage from "../pages/LandingPage";
+import LoginPage from "../pages/LoginPage";
+import ProtectedRoute from "./ProtectedRoute";
+import DashboardPage from "../pages/DashboardPage";
+import ProjectDetailPage from "../pages/ProjectDetailPage";
+
+const AppRoutes = () => {
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <DashboardPage/>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/project/:id"
+        element={
+          <ProtectedRoute>
+            <ProjectDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+};
+
+export default AppRoutes;

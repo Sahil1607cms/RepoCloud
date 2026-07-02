@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+/dist/
+/build/
+/.next/
+/out/
+**/dist/
+**/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local runtime files
+*.local
+*.pid
+*.seed
+*.pid.lock
+.tmp/
+temp/
+uploads/
+
+# Cache and tooling
+.cache/
+coverage/
+*.tsbuildinfo
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
