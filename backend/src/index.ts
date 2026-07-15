@@ -10,17 +10,19 @@ import "./config/passport.js";  //node js import GitHubStrategy
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set("trust proxy", 1);
+
 // Session middleware setup
 app.use(session({
   secret: process.env.SESSION_SECRET || "your-secret-key",
   resave: false,
   saveUninitialized: false,
-  cookie: { 
-    secure: process.env.NODE_ENV === "production",
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
+  cookie: {
+  secure: process.env.NODE_ENV === "production",
+  httpOnly: true,
+  sameSite: "none",
+  maxAge: 24 * 60 * 60 * 1000,
+}
 }));
 
 app.use(cors({
@@ -47,6 +49,10 @@ app.use("/auth", authRoutes);
 
 // Protected route to get current user info
 app.get("/auth/me", (req: Request, res: Response) => {
+  console.log("isAuthenticated:", req.isAuthenticated());
+  console.log("session:", req.session);
+  console.log("user:", req.user);
+  
   //isAuthenticated method added by passport 
   if (req.isAuthenticated()) {
     const user = req.user as any;
