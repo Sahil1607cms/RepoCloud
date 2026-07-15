@@ -13,17 +13,20 @@ const PORT = process.env.PORT || 3000;
 app.set("trust proxy", 1);
 
 // Session middleware setup
-app.use(session({
-  secret: process.env.SESSION_SECRET || "your-secret-key",
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-  secure: process.env.NODE_ENV === "production",
-  httpOnly: true,
-  sameSite: "none",
-  maxAge: 24 * 60 * 60 * 1000,
-}
-}));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET!,
+    resave: false,
+    saveUninitialized: false,
+    proxy: true,
+    cookie: {
+      secure: true,
+      httpOnly: true,
+      sameSite: "none",
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  }),
+);
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
@@ -52,7 +55,7 @@ app.get("/auth/me", (req: Request, res: Response) => {
   console.log("isAuthenticated:", req.isAuthenticated());
   console.log("session:", req.session);
   console.log("user:", req.user);
-  
+
   //isAuthenticated method added by passport 
   if (req.isAuthenticated()) {
     const user = req.user as any;
