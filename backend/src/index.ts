@@ -1,15 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import type { Request, Response } from "express";
-import cors from "cors"
-import {simpleGit} from "simple-git"
-import generateId from "./generateRandomId.js"
+import cors from "cors";
 import session from "express-session";
 import passport from "passport";
 import authRoutes from "./routes/authRoutes.js";
-import "./config/passport.js";
+import "./config/passport.js";  //node js import GitHubStrategy
 
-const app = express()
+const app = express();
 
 // Session middleware setup
 app.use(session({
@@ -48,6 +46,7 @@ app.use("/auth", authRoutes);
 
 // Protected route to get current user info
 app.get("/auth/me", (req: Request, res: Response) => {
+  //isAuthenticated method added by passport 
   if (req.isAuthenticated()) {
     const user = req.user as any;
     res.json({
@@ -64,7 +63,9 @@ app.get("/auth/me", (req: Request, res: Response) => {
 
 // Logout route
 app.post("/auth/logout", (req: Request, res: Response) => {
-  req.logout((err: any) => {
+  // logout method added by passport js
+  // other methods added are login, user
+  req.logout((err) => {
     if (err) {
       return res.status(500).json({ message: "Logout failed" });
     }
@@ -72,15 +73,9 @@ app.post("/auth/logout", (req: Request, res: Response) => {
   });
 });
 
-app.post("/deploy", (req: Request, res: Response)=>{
-    const repoUrl = req.body.repoUrl; //github url
-    console.log(repoUrl)
-    const id = generateId()
-    simpleGit().clone(repoUrl,`output/${id}`)
-    res.json({
-        id:id
-    })
-})
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok" });
+});
 
 const server = app.listen(3000, () => {
   console.log("Server running on http://localhost:3000");

@@ -13,6 +13,7 @@ router.get(
 router.get(
   "/github/callback",
   passport.authenticate("github", {
+    //keep the user logged in during the session
     session: true,
   }),
   (req, res) => {

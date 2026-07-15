@@ -1,6 +1,7 @@
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 
+//handles github OAuth
 passport.use(
   new GitHubStrategy(
     {

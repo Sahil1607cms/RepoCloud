@@ -1,11 +1,14 @@
-import api from "./api";
+import api from "./api.js";
 
 //creating objects with authentication objects
 export const authService = {
-  // Get current user info
+  //for hydrating the global variables using context api (AuthContext)
   getCurrentUser: async () => {
     try {
       const response = await api.get("/auth/me");
+      // console.log(response.data) 
+      // = {id: '149762467', username: 'Sahil1607cms', avatar_url: 'https://avatars.githubusercontent.com/u/149762467?v=4', displayName: 'Sahil Srivastava'}
+
       return {
         ...response.data,
         login: response.data?.username || response.data?.displayName, //github may return displayName
@@ -16,7 +19,7 @@ export const authService = {
     }
   },
 
-  // Logout
+  // Logout 
   logout: async () => {
     try {
       await api.post("/auth/logout");

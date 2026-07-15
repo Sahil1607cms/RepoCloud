@@ -1,12 +1,9 @@
-import axios from "axios";
-
-//Backend url
-const API_SERVER_URL = "http://127.0.0.1:9000";
+import api from "./api";
 
 export const deploymentService = {
   createDeployment: async (githubUrl) => {
     try {
-      const response = await axios.post(`${API_SERVER_URL}/project`, {
+      const response = await api.post("/project", {
         githubUrl,
       });
       return response.data;
