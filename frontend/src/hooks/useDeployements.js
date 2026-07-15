@@ -29,13 +29,12 @@ export const useDeployements = () => {
       const randomId = res.data.randomId;
       const url = res.data.url;
       
-      // Extract repo name
       let name = "Unnamed Project";
       try {
         const parts = githubUrl.split("/");
         name = parts[parts.length - 1].replace(".git", "") || "New Project";
       } catch (err) {
-        // Fallback
+        
       }
 
       const newProject = {
@@ -59,9 +58,11 @@ export const useDeployements = () => {
     }
   };
 
+  //updating status of project
   const updateProject = (id, fields) => {
     // We fetch current projects from localStorage to ensure we don't overwrite concurrent changes
     const stored = localStorage.getItem("repocloud_projects");
+    //fallback if localstorage fails
     let currentProjects = projects;
     if (stored) {
       try {
@@ -70,6 +71,7 @@ export const useDeployements = () => {
     }
     const updated = currentProjects.map(p => {
       if (p.id === id) {
+        //updating current object and placing fields on it like :success
         return { ...p, ...fields };
       }
       return p;

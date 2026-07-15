@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { authService } from "../services/authService";
 
+//global variable accessed using usecontext
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
@@ -22,10 +23,11 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
       }
     };
-
+    //executing this function after first loading
     checkUser();
   }, []);
 
+  //updating local state after login
   const login = (userData) => {
     setUser(userData);
     setIsAuthenticated(true);
@@ -45,7 +47,6 @@ export const AuthProvider = ({ children }) => {
       setTimeout(async () => {
         try {
           await authService.getCurrentUser();
-          // If we can still get user data, something went wrong
           console.warn("User still authenticated after logout attempt");
         } catch (error) {
           // Expected - user should not be authenticated
@@ -54,7 +55,7 @@ export const AuthProvider = ({ children }) => {
       }, 500);
     }
   };
-
+  //wrapping all variables into this object 
   const value = {
     user,
     setUser,

@@ -11,12 +11,11 @@ const DashboardPage = () => {
   const { projects } = useDeployements();
 
   const handleLogout = async () => {
-    // Wait for logout to complete and state to be cleared
     await logout();
     // Add a small delay to ensure state updates are processed
     setTimeout(() => {
       navigate("/", { replace: true });
-    }, 100);
+    }, 200);
   };
 
   return (

@@ -1,5 +1,6 @@
 import api from "./api";
 
+//creating objects with authentication objects
 export const authService = {
   // Get current user info
   getCurrentUser: async () => {
@@ -7,7 +8,7 @@ export const authService = {
       const response = await api.get("/auth/me");
       return {
         ...response.data,
-        login: response.data?.username || response.data?.displayName,
+        login: response.data?.username || response.data?.displayName, //github may return displayName
       };
     } catch (error) {
       console.error("Failed to get current user:", error);
@@ -25,7 +26,7 @@ export const authService = {
     }
   },
 
-  // GitHub login redirect
+  // not api request, redirecting to github login page
   loginWithGithub: () => {
     window.location.href = `${import.meta.env.VITE_API_URL || "http://localhost:3000"}/auth/github`;
   },

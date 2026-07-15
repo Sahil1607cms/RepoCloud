@@ -1,3 +1,5 @@
+//frontend logSocket.js connects to this socket backend server
+
 import express from "express";
 import uniqid from "uniqid";
 import { ECSClient, RunTaskCommand } from "@aws-sdk/client-ecs";
@@ -34,9 +36,7 @@ const subscriber = new redis(
 //anyone can connect with this socket server 
 const io = new Server({ cors: "*" });
 
-//on new connection, if frontend says subscribe to logs123...
 io.on("connection", (socket) => {
-  // Track channels this socket has joined to avoid duplicate joins
   socket._joinedChannels = new Set();
 
   //on receiving event subscribe from the frontend, join this channel only

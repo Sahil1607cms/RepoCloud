@@ -2,12 +2,14 @@ import { io } from "socket.io-client";
 
 // Create a singleton Socket.IO client to be reused across the app
 let socket = null;
+//for storing unique values
 const subscribedChannels = new Set();
 
 export function getLogSocket() {
   if (!socket) {
+    //frontend: can i connect mr backend?
     socket = io("http://127.0.0.1:9001", {
-      transports: ["websocket"],
+      transports: ["websocket"], //preventing long polling
       reconnectionAttempts: 5,
     });
 
@@ -27,7 +29,7 @@ export function getLogSocket() {
 }
 
 export function subscribeLogChannel(channel) {
-  const socket = getLogSocket();
+  const socket = getLogSocket(); //31->10
   if (!subscribedChannels.has(channel)) {
     subscribedChannels.add(channel);
     socket.emit("subscribe", channel);
