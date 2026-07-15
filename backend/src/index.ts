@@ -8,6 +8,7 @@ import authRoutes from "./routes/authRoutes.js";
 import "./config/passport.js";  //node js import GitHubStrategy
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 // Session middleware setup
 app.use(session({
@@ -77,8 +78,8 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-const server = app.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 // Handle server errors
