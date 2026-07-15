@@ -17,6 +17,9 @@ router.get(
     session: true,
   }),
   (req, res) => {
+    console.log("LOGIN SUCCESS");
+    console.log("USER:", req.user);
+    console.log("SESSION:", req.session);
     // Redirect to frontend dashboard after successful authentication
     res.redirect(`${process.env.FRONTEND_URL || "http://localhost:5173"}/dashboard`);
   }
