@@ -139,7 +139,7 @@ app.post("/project", async (req, res) => {
 
     return res.json({
       status: "queued",
-      data: { randomId, url: `${process.env.BASE_PATH_OUTPUT}/${randomId}` }, //future deployement url sent to frontend
+      data: { randomId, url: `${process.env.REVERSE_PROXY_URL}/${randomId}` }, //future deployement url sent to frontend
     });
   } catch (error) {
     console.error("Failed to start AWS ECS Task. Details:", error);
