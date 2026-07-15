@@ -1,5 +1,5 @@
 //frontend logSocket.js connects to this socket backend server
-
+import http from "http";
 import express from "express";
 import uniqid from "uniqid";
 import { ECSClient, RunTaskCommand } from "@aws-sdk/client-ecs";
@@ -8,9 +8,10 @@ import redis from "ioredis"; //to receive logs published by build container
 import cors from 'cors'
 import dotenv from 'dotenv'
 
-dotenv.config({ path: '../.env' })
+dotenv.config({ path: "../.env" });
 const app = express();
-const PORT = 9000;
+const PORT = process.env.PORT || process.env.API_SERVER_PORT || 9000;
+const server = http.createServer(app);
 // First browser asks the backend whether i can POST from this origin
 // OPTIONS /project
 // Origin: http://localhost:5173
@@ -22,7 +23,8 @@ const PORT = 9000;
 //   res.setHeader("Access-Control-Allow-Headers", "*");
 app.use(
   cors({
-    origin: "*",
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
@@ -34,7 +36,12 @@ const subscriber = new redis(
 ); //rediss:// means SSL encrypted connection
 
 //anyone can connect with this socket server 
-const io = new Server({ cors: "*" });
+const io = new Server(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
+  },
+});
 
 io.on("connection", (socket) => {
   socket._joinedChannels = new Set();
@@ -68,12 +75,12 @@ io.on("connection", (socket) => {
   });
 });
 
-io.listen(9001, () => console.log("Socket Server 9001"));
 
 app.use(express.json());
 
 //connecting to ECS
 const ecsClient = new ECSClient({
+  region: process.env.AWS_REGION || "ap-south-1",
   credentials: {
     accessKeyId: process.env.IAM_ACCESS_KEY,
     secretAccessKey: process.env.IAM_SECRET_KEY,
@@ -132,7 +139,7 @@ app.post("/project", async (req, res) => {
 
     return res.json({
       status: "queued",
-      data: { randomId, url: `http://${randomId}.localhost:8000` }, //future deployement url sent to frontend
+      data: { randomId, url: `${process.env.BASE_PATH_OUTPUT}/${randomId}` }, //future deployement url sent to frontend
     });
   } catch (error) {
     console.error("Failed to start AWS ECS Task. Details:", error);
@@ -169,6 +176,8 @@ async function initRedisSubscribe() {
 
 initRedisSubscribe();
 
-app.listen(PORT, (req, res) => {
-  console.log(`Api server running on port ${PORT}`);
+console.log("REDIS_URI:", process.env.REDIS_URI);
+
+server.listen(PORT, () => {
+  console.log(`API + Socket server running on ${PORT}`);
 });

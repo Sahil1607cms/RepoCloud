@@ -5,7 +5,7 @@ import dotenv from 'dotenv'
 dotenv.config({ path: '../.env' })
 const app = express()
 
-const PORT = 8000
+const PORT =process.env.S3_PORT || 8000
 
 const proxy = httpProxy.createProxy() //creating the proxy, it can forward request to another server
 
