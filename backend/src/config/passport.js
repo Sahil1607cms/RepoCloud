@@ -1,6 +1,8 @@
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 
+console.log("GITHUB_CALLBACK_URL =", process.env.GITHUB_CALLBACK_URL);
+
 passport.use(
   new GitHubStrategy(
     {
