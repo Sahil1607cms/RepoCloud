@@ -1,50 +1,95 @@
 import express from "express";
-import httpProxy from "http-proxy";
 import dotenv from "dotenv";
+import {
+  S3Client,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
 
 dotenv.config({ path: "../.env" });
 const app = express();
 
 const PORT = process.env.PORT || process.env.S3_PORT || 8000;
 
-const proxy = httpProxy.createProxy(); //creating the proxy, it can forward request to another server
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || "ap-south-1",
 
-if (!process.env.BASE_PATH) {
-  throw new Error("BASE_PATH is not defined");
+  credentials: {
+    accessKeyId: process.env.IAM_ACCESS_KEY,
+    secretAccessKey: process.env.IAM_SECRET_KEY,
+  },
+});
+
+const BUCKET = process.env.S3_BUCKET;
+
+if (!BUCKET) {
+  throw new Error("S3_BUCKET is not defined");
 }
 
 //middleware
 //handle all requests without a path also
-app.use((req, res) => {
-  // Example:
-  // /abc123
-  // /abc123/
-  // /abc123/assets/index.js
+app.use(async (req, res) => {
+  try {
+    // Example:
+    // /1ke9b624msulrnb9
+    // /1ke9b624msulrnb9/assets/index.js
 
-  const parts = req.path.split("/").filter(Boolean);
+    const parts = req.path.split("/").filter(Boolean);
 
-  if (parts.length === 0) {
-    return res.status(400).send("Missing project id");
+    if (parts.length === 0) {
+      return res.status(400).send("Missing project id");
+    }
+
+    const projectId = parts[0];
+
+    // Everything after the project ID
+    let filePath = parts.slice(1).join("/");
+
+    // /projectId -> index.html
+    if (!filePath) {
+      filePath = "index.html";
+    }
+
+    const key = `__outputs/${projectId}/${filePath}`;
+
+    console.log("Fetching S3 object:", key);
+
+    const command = new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+    });
+
+    const response = await s3Client.send(command);
+
+    if (!response.Body) {
+      return res.status(404).send("File not found");
+    }
+
+    // Forward content type
+    if (response.ContentType) {
+      res.setHeader("Content-Type", response.ContentType);
+    }
+
+    // Forward cache information if available
+    if (response.CacheControl) {
+      res.setHeader("Cache-Control", response.CacheControl);
+    }
+
+    // Stream S3 object directly to browser
+    response.Body.pipe(res);
+
+  } catch (error) {
+    console.error("S3 proxy error:", error);
+
+    if (error.name === "NoSuchKey") {
+      return res.status(404).send("File not found");
+    }
+
+    return res.status(500).json({
+      error: "Failed to retrieve file from S3",
+    });
   }
-  const projectId = parts[0];
-  const basePath = process.env.BASE_PATH.replace(/\/$/, "");
-  const target = `${basePath}/${projectId}`;
-
-  // Remove "/abc123" before forwarding to S3
-  req.url = req.url.replace(`/${projectId}`, "") || "/";
-
-  proxy.web(req, res, {
-    target,
-    changeOrigin: true,
-  });
 });
 
-proxy.on("proxyReq", (proxyReq, req, res) => {
-  //proxyReq build in event, runs just before proxy sends the request to S3
-  const url = req.url;
-  if (url === "/") proxyReq.path += "/index.html"; //changing /__outputs__/abc123/ => /__outputs__/abc123/index.html just before sending
+app.listen(PORT, () => {
+  console.log(`Reverse proxy server running on port ${PORT}`);
 });
-
-app.listen(PORT, () =>
-  console.log(`Reverse proxy server running on port ${PORT}`),
-);
