@@ -18,10 +18,6 @@ const __dirname = path.dirname(__filename);        //extracting only the directo
 
 const s3Client = new S3Client({
   region: "ap-south-1",
-  credentials: {
-    accessKeyId: process.env.IAM_ACCESS_KEY,
-    secretAccessKey: process.env.IAM_SECRET_KEY,
-  },
 });
 const PROJECT_ID = process.env.PROJECT_ID;
 
