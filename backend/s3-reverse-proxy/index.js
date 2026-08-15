@@ -29,10 +29,6 @@ if (!BUCKET) {
 //handle all requests without a path also
 app.use(async (req, res) => {
   try {
-    // Example:
-    // /1ke9b624msulrnb9
-    // /1ke9b624msulrnb9/assets/index.js
-
     const parts = req.path.split("/").filter(Boolean);
 
     if (parts.length === 0) {
@@ -41,10 +37,13 @@ app.use(async (req, res) => {
 
     const projectId = parts[0];
 
-    // Everything after the project ID
+    // Force trailing slash after project ID
+    if (parts.length === 1 && !req.path.endsWith("/")) {
+      return res.redirect(301, `/${projectId}/`);
+    }
+
     let filePath = parts.slice(1).join("/");
 
-    // /projectId -> index.html
     if (!filePath) {
       filePath = "index.html";
     }
@@ -64,17 +63,14 @@ app.use(async (req, res) => {
       return res.status(404).send("File not found");
     }
 
-    // Forward content type
     if (response.ContentType) {
       res.setHeader("Content-Type", response.ContentType);
     }
 
-    // Forward cache information if available
     if (response.CacheControl) {
       res.setHeader("Cache-Control", response.CacheControl);
     }
 
-    // Stream S3 object directly to browser
     response.Body.pipe(res);
 
   } catch (error) {
