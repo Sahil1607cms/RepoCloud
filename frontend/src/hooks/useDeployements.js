@@ -1,26 +1,29 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { deploymentService } from "../services/deploymentService";
 
 export const useDeployements = () => {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Load from localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem("repocloud_projects");
-    if (stored) {
-      try {
-        setProjects(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse projects", e);
-      }
+  // Fetch projects from MongoDB database
+  const fetchProjects = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await deploymentService.getProjects();
+      setProjects(data || []);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to load projects from MongoDB:", err);
+      setError(err);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  const saveProjects = (updated) => {
-    setProjects(updated);
-    localStorage.setItem("repocloud_projects", JSON.stringify(updated));
-  };
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   const createProject = async (githubUrl) => {
     setLoading(true);
@@ -28,27 +31,24 @@ export const useDeployements = () => {
       const res = await deploymentService.createDeployment(githubUrl);
       const randomId = res.data.randomId;
       const url = res.data.url;
-      
+
       let name = "Unnamed Project";
       try {
         const parts = githubUrl.split("/");
         name = parts[parts.length - 1].replace(".git", "") || "New Project";
-      } catch (err) {
-        
-      }
+      } catch (err) {}
 
-      const newProject = {
+      const newProject = res.data.project || {
         id: randomId,
         name,
         repoUrl: githubUrl,
         status: "Building",
         url: url,
         logs: [],
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
-      const updated = [newProject, ...projects];
-      saveProjects(updated);
+      setProjects((prev) => [newProject, ...prev.filter((p) => p.id !== newProject.id)]);
       return newProject;
     } catch (error) {
       console.error("Deployment failed", error);
@@ -58,44 +58,36 @@ export const useDeployements = () => {
     }
   };
 
-  //updating status of project
-  const updateProject = (id, fields) => {
-    // We fetch current projects from localStorage to ensure we don't overwrite concurrent changes
-    const stored = localStorage.getItem("repocloud_projects");
-    //fallback if localstorage fails
-    let currentProjects = projects;
-    if (stored) {
-      try {
-        currentProjects = JSON.parse(stored);
-      } catch (e) {}
+  // Update project status and logs in MongoDB
+  const updateProject = async (id, fields) => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...fields } : p))
+    );
+
+    try {
+      await deploymentService.updateProject(id, fields);
+    } catch (err) {
+      console.error(`Failed to update project ${id} in MongoDB:`, err);
     }
-    const updated = currentProjects.map(p => {
-      if (p.id === id) {
-        //updating current object and placing fields on it like :success
-        return { ...p, ...fields };
-      }
-      return p;
-    });
-    saveProjects(updated);
   };
 
-  const deleteProject = (id) => {
-    const stored = localStorage.getItem("repocloud_projects");
-    let currentProjects = projects;
-    if (stored) {
-      try {
-        currentProjects = JSON.parse(stored);
-      } catch (e) {}
+  const deleteProject = async (id) => {
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+
+    try {
+      await deploymentService.deleteProject(id);
+    } catch (err) {
+      console.error(`Failed to delete project ${id} from MongoDB:`, err);
     }
-    const updated = currentProjects.filter(p => p.id !== id);
-    saveProjects(updated);
   };
 
   return {
     projects,
     loading,
+    error,
     createProject,
     updateProject,
     deleteProject,
+    fetchProjects,
   };
 };

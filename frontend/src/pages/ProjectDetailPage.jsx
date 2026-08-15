@@ -6,6 +6,7 @@ import {
 } from "../services/logSocket";
 import { useParams, useNavigate } from "react-router-dom";
 import { useDeployements } from "../hooks/useDeployements";
+import { deploymentService } from "../services/deploymentService";
 import BuildLogs from "../components/BuildLogs";
 import {
   ArrowLeft,
@@ -18,12 +19,37 @@ import {
 const ProjectDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { projects, updateProject } = useDeployements();
+  const { projects, updateProject, loading: listLoading } = useDeployements();
 
-  // Find project in the projects list
-  const project = projects.find((p) => p.id === id);
+  const [fetchedProject, setFetchedProject] = useState(null);
+  const [fetching, setFetching] = useState(false);
+  const [fetchFailed, setFetchFailed] = useState(false);
+
+  // Find project in hook list or fallback to directly fetched project
+  const project = projects.find((p) => p.id === id) || fetchedProject;
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState("Building");
+
+  // Fetch project directly from MongoDB if not found in memory state yet
+  useEffect(() => {
+    if (!project && !fetching && !fetchFailed) {
+      setFetching(true);
+      deploymentService
+        .getProjectById(id)
+        .then((data) => {
+          if (data) {
+            setFetchedProject(data);
+          } else {
+            setFetchFailed(true);
+          }
+        })
+        .catch((err) => {
+          console.error("Project fetch error:", err);
+          setFetchFailed(true);
+        })
+        .finally(() => setFetching(false));
+    }
+  }, [id, project, fetching, fetchFailed]);
 
   // Keep local logs state in sync with loaded project
   useEffect(() => {
@@ -100,13 +126,22 @@ const ProjectDetailPage = () => {
     };
   }, [id, project?.status]);
 
+  if (fetching || (listLoading && !project)) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white px-6">
+        <RefreshCw className="h-10 w-10 text-purple-500 animate-spin mb-4" />
+        <p className="text-zinc-400 font-medium">Loading project from MongoDB...</p>
+      </div>
+    );
+  }
+
   if (!project) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white px-6">
         <AlertCircle className="h-16 w-16 text-red-500 mb-4 animate-bounce" />
         <h1 className="text-3xl font-bold">Project Not Found</h1>
         <p className="mt-2 text-zinc-400">
-          The deployment ID you are looking for does not exist.
+          The deployment ID you are looking for does not exist in MongoDB database.
         </p>
         <button
           onClick={() => navigate("/dashboard")}

@@ -31,7 +31,8 @@ export const authService = {
 
   // not api request, redirecting to github login page
   loginWithGithub: () => {
-   window.location.href = `${import.meta.env.VITE_AUTH_URL}/auth/github`;
+   const authBaseUrl = import.meta.env.VITE_AUTH_URL || import.meta.env.VITE_API_URL || "http://localhost:3000";
+   window.location.href = `${authBaseUrl}/auth/github`;
   },
 
   // Check if user is authenticated

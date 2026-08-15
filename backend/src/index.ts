@@ -9,13 +9,20 @@ import "./config/passport.js";  //node js import GitHubStrategy
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:5173";
+const allowedOrigins = [
+  frontendOrigin,
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.RENDER_EXTERNAL_URL,
+].filter(Boolean) as string[];
 
 app.set("trust proxy", 1);
 
 // Session middleware setup
 app.use(
   session({
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET || "change-me-in-production",
     resave: false,
     saveUninitialized: false,
     proxy: true,
@@ -29,8 +36,22 @@ app.use(
 );
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  credentials: true
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app") || origin.endsWith(".onrender.com")) {
+      callback(null, true);
+      return;
+    }
+
+    callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }))
 app.use(express.json())
 
