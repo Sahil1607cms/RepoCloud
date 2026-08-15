@@ -92,7 +92,7 @@ const ecsClient = new ECSClient({
 
 const config = {
   CLUSTER: "arn:aws:ecs:ap-south-1:623244137506:cluster/RepoCloud",
-  TASK: "arn:aws:ecs:ap-south-1:623244137506:task-definition/builder-task:3",
+  TASK: "arn:aws:ecs:ap-south-1:623244137506:task-definition/builder-task:4",
 };
 
 // GET /projects - Fetch all projects stored in MongoDB or memory store
