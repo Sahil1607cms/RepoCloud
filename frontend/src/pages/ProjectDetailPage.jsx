@@ -4,7 +4,7 @@ import {
   subscribeLogChannel,
   unsubscribeLogChannel,
 } from "../services/logSocket";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useDeployements } from "../hooks/useDeployements";
 import { deploymentService } from "../services/deploymentService";
 import BuildLogs from "../components/BuildLogs";
@@ -14,25 +14,31 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
+  Rocket,
 } from "lucide-react";
 
 const ProjectDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { projects, updateProject, loading: listLoading } = useDeployements();
+  const location = useLocation();
+  const { projects, updateProject, createProject, loading: listLoading } = useDeployements();
 
-  const [fetchedProject, setFetchedProject] = useState(null);
+  const [fetchedProject, setFetchedProject] = useState(location.state?.project || null);
   const [fetching, setFetching] = useState(false);
   const [fetchFailed, setFetchFailed] = useState(false);
 
-  // Find project in hook list or fallback to directly fetched project
-  const project = projects.find((p) => p.id === id) || fetchedProject;
+  // Find project in hook context list, location state, or fallback to directly fetched project
+  const project =
+    projects.find((p) => p.id === id || p.projectId === id) ||
+    location.state?.project ||
+    fetchedProject;
+
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState("Building");
 
-  // Fetch project directly from MongoDB if not found in memory state yet
+  // Fetch project directly if not found in memory/context state yet
   useEffect(() => {
-    if (!project && !fetching && !fetchFailed) {
+    if (!project && !fetching && !fetchFailed && id) {
       setFetching(true);
       deploymentService
         .getProjectById(id)
@@ -130,7 +136,7 @@ const ProjectDetailPage = () => {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white px-6">
         <RefreshCw className="h-10 w-10 text-purple-500 animate-spin mb-4" />
-        <p className="text-zinc-400 font-medium">Loading project from MongoDB...</p>
+        <p className="text-zinc-400 font-medium">Fetching deployment details...</p>
       </div>
     );
   }
@@ -138,17 +144,25 @@ const ProjectDetailPage = () => {
   if (!project) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white px-6">
-        <AlertCircle className="h-16 w-16 text-red-500 mb-4 animate-bounce" />
-        <h1 className="text-3xl font-bold">Project Not Found</h1>
-        <p className="mt-2 text-zinc-400">
-          The deployment ID you are looking for does not exist in MongoDB database.
+        <AlertCircle className="h-16 w-16 text-yellow-500 mb-4" />
+        <h1 className="text-3xl font-bold">Deployment Not Found</h1>
+        <p className="mt-2 text-zinc-400 max-w-md text-center">
+          The deployment ID <code className="text-purple-400 font-mono">{id}</code> was not found in storage.
         </p>
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="mt-6 flex items-center gap-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-6 py-3 font-semibold transition"
-        >
-          <ArrowLeft className="h-5 w-5" /> Back to Dashboard
-        </button>
+        <div className="mt-6 flex flex-wrap items-center gap-4">
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 rounded-xl bg-purple-600 hover:bg-purple-500 px-6 py-3 font-semibold transition"
+          >
+            <Rocket className="h-5 w-5" /> Deploy New Repository
+          </button>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-6 py-3 font-semibold transition text-zinc-300 hover:text-white"
+          >
+            <ArrowLeft className="h-5 w-5" /> Back to Dashboard
+          </button>
+        </div>
       </div>
     );
   }

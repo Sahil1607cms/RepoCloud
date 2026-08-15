@@ -16,7 +16,7 @@ const DeployForm = () => {
     setError("");
     try {
       const project = await createProject(repoUrl.trim());
-      navigate(`/project/${project.id}`);
+      navigate(`/project/${project.id}`, { state: { project } });
     } catch (err) {
       console.error(err);
       const serverErrMsg = err.response?.data?.details || err.response?.data?.error || err.message;

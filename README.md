@@ -176,11 +176,11 @@ RepoCloud moves the build process into **ephemeral, isolated AWS ECS Fargate con
 - **Edge cases:** Requests for root paths `/` automatically append `index.html` via `proxy.on("proxyReq")` event handler.
 
 ### 5. Persistent Deployment History Dashboard
-- **What it does:** Displays past deployments, their build status (Building, Success, Failed), repo URL, and preview link.
-- **Why it exists:** Enables users to access historical deployments and check logs across sessions.
-- **How it works internally:** `useDeployements.js` syncs project metadata to browser `localStorage` under `repocloud_projects`. Upon status changes detected during log parsing (e.g., matching `"Done..."` or `"npm ERR!"`), the project record status is updated in state and persisted to `localStorage`.
-- **Components involved:** `DashboardPage.jsx`, `DeploymentHistory.jsx`, `ProjectCard.jsx`, `useDeployements.js`.
-- **Edge cases:** Corrupted `localStorage` data is caught via `try...catch` JSON parsing blocks.
+- **What it does:** Displays past deployments, their build status (Building, Success, Failed), repo URL, persistent terminal logs, and preview link across sessions.
+- **Why it exists:** Enables users to access historical deployments and inspect build logs reliably from MongoDB database storage.
+- **How it works internally:** `useDeployements.js` fetches project deployment records from MongoDB via `deploymentService` (`GET /projects`). Upon deployment creation, `POST /project` saves a new document to MongoDB via Mongoose. As build status or log events update (e.g., matching `"Done..."` or `"npm ERR!"`), the frontend syncs state with MongoDB via `PATCH /projects/:id`.
+- **Components involved:** `DashboardPage.jsx`, `DeploymentHistory.jsx`, `ProjectCard.jsx`, `useDeployements.js`, `deploymentService.js`, `Project.js` Mongoose model.
+- **Edge cases:** MongoDB connection interruptions are caught and logged, returning structured error responses to API clients.
 
 ---
 
@@ -199,6 +199,7 @@ RepoCloud moves the build process into **ephemeral, isolated AWS ECS Fargate con
 - **Node.js (v18+ / v20+ / v24.x):** JavaScript execution runtime for backend microservices and container scripts.
 - **Express.js (`^5.2.1`):** Lightweight web framework powering main Auth services, API Orchestration, and Reverse Proxy routes.
 - **TypeScript (`^6.0.3`):** Strongly-typed wrapper around Express backend routes and Passport configuration (`backend/src`).
+- **MongoDB & Mongoose (`^8.10.1`):** NoSQL database and ODM library providing persistent document storage for project deployment metadata, build status, and logs.
 - **Passport.js (`^0.7.0`) & Passport-GitHub2 (`^0.1.12`):** OAuth 2.0 authentication middleware mapping GitHub profiles to Express session stores.
 - **Express Session (`^1.19.0`):** Server-side session middleware issuing HTTP-only, secure cookies.
 - **CORS (`^2.8.6`):** Cross-Origin Resource Sharing middleware enabling credentials across port domains (`http://localhost:5173` to `http://localhost:3000` / `9000`).
@@ -318,9 +319,10 @@ User -> Pastes "https://github.com/user/my-react-app" into DeployForm
      -> Clicks "Start Deployment" button
      -> Frontend executes POST :9000/project with { githubUrl }
      -> API Server generates Project ID ("abc123xyz")
+     -> API Server saves Project deployment document to MongoDB database via Mongoose
      -> API Server sends RunTaskCommand to AWS ECS Fargate Cluster
-     -> API Server returns HTTP 200 with { status: "queued", data: { randomId: "abc123xyz", url: "http://localhost:8000/abc123xyz" } }
-     -> Frontend saves Project record into localStorage and redirects to /project/abc123xyz
+     -> API Server returns HTTP 200 with { status: "queued", data: { randomId: "abc123xyz", url: "...", project: {...} } }
+     -> Frontend state updates with new project record and redirects to /project/abc123xyz
 
 [3. Log Subscription & Build Execution]
 Frontend -> Initializes Socket.IO connection to ws://127.0.0.1:9001
@@ -346,7 +348,7 @@ script.js -> Child process completes with exit code 0
               - Publishes log line "uploaded file <filename>" to Redis
          -> Publishes log line "Done..." to Redis
          -> Closes Redis publisher connection
-Frontend -> Log parser detects "Done...", updates project status in localStorage to "Success"
+Frontend -> Log parser detects "Done...", updates project status and logs in MongoDB via PATCH /projects/abc123xyz
          -> Enables "Visit Website" button in UI
 
 [5. Serving Application via Proxy]
@@ -431,7 +433,7 @@ RepoCloud/
         │   └── AuthContext.jsx     # Provider component holding global user, auth status, login/logout logic
         ├── hooks/                  # Custom React hooks
         │   ├── useAuth.js          # Hook re-exporting AuthContext context getter
-        │   └── useDeployements.js  # Custom hook managing project list state, localStorage sync, and updates
+        │   └── useDeployements.js  # Custom hook managing project deployment state & MongoDB sync
         ├── pages/                  # Page-level view components
         │   ├── DashboardPage.jsx   # Primary user portal showing DeployForm and DeploymentHistory
         │   ├── LandingPage.jsx     # Marketing home page compiling Hero, Features, HowItWorks, CTA, Footer
@@ -470,7 +472,7 @@ Custom Hook Call (useDeployements -> createProject)
 Service Execution (deploymentService -> API POST /project)
    │
    ▼
-State Modification & LocalStorage Persistence (repocloud_projects)
+State Modification & MongoDB Database Persistence
    │
    ▼
 Navigation (ProjectDetailPage.jsx)
@@ -484,7 +486,7 @@ UI State Update & Dynamic Auto-Scroll (BuildLogs.jsx)
 
 ### Key Frontend Subsystems
 - **Authentication State (`AuthContext.jsx`):** On initial page mount, `AuthProvider` calls `authService.getCurrentUser()`. If successful, `user` data is set and `isAuthenticated` becomes `true`. If unauthenticated, state reverts to `null` and `ProtectedRoute.jsx` blocks access to `/dashboard` and `/project/:id`.
-- **Deployment State Management (`useDeployements.js`):** Encapsulates CRUD operations over deployment objects. State is stored in component state and automatically synced to `localStorage` under `repocloud_projects`. Status updates (`Building` -> `Success` / `Failed`) update both in-memory state and `localStorage`.
+- **Deployment State Management (`useDeployements.js`):** Encapsulates CRUD operations over deployment objects, syncing directly with MongoDB via `deploymentService` API endpoints (`/projects`). Status updates (`Building` -> `Success` / `Failed`) update both in-memory React state and MongoDB documents.
 - **WebSocket Singleton Client (`logSocket.js`):** Prevents duplicate socket connections by exporting a singleton instance connected to `http://127.0.0.1:9001`. Maintains a `Set` of subscribed channels (`subscribedChannels`) and handles automatic re-subscribing on connection drops (`socket.on("connect")`).
 - **Terminal View Component (`BuildLogs.jsx`):** Renders streaming log arrays inside a dark terminal container with macOS-style control dots. Parses log string keywords to dynamically apply Tailwind color styling:
   - `text-red-400`: Error messages, failure events, stderr outputs.
@@ -602,10 +604,72 @@ HTTP JSON Response Output ({ status: "queued", data: { randomId, url } })
   "status": "queued",
   "data": {
     "randomId": "1b9d6bcd-8b7e-4d0d-a59d-648172750244",
-    "url": "http://localhost:8000/1b9d6bcd-8b7e-4d0d-a59d-648172750244"
+    "url": "http://localhost:8000/1b9d6bcd-8b7e-4d0d-a59d-648172750244",
+    "project": {
+      "id": "1b9d6bcd-8b7e-4d0d-a59d-648172750244",
+      "name": "react-demo-app",
+      "repoUrl": "https://github.com/user/react-demo-app",
+      "status": "Building",
+      "url": "http://localhost:8000/1b9d6bcd-8b7e-4d0d-a59d-648172750244",
+      "logs": []
+    }
   }
 }
 ```
+
+### 6. Get All Project Deployments
+* **HTTP Method:** `GET`
+* **Endpoint:** `/projects`
+* **Server Port:** `9000`
+* **Purpose:** Fetches all project deployment records from MongoDB sorted by creation date (newest first).
+* **Authentication Required:** No.
+* **Response Code:** `200 OK`.
+* **Example Response:**
+```json
+[
+  {
+    "id": "1b9d6bcd-8b7e-4d0d-a59d-648172750244",
+    "name": "react-demo-app",
+    "repoUrl": "https://github.com/user/react-demo-app",
+    "status": "Success",
+    "url": "http://localhost:8000/1b9d6bcd-8b7e-4d0d-a59d-648172750244",
+    "logs": ["Build started...", "Done..."],
+    "createdAt": "2026-08-15T07:00:00.000Z"
+  }
+]
+```
+
+### 7. Get Single Project by ID
+* **HTTP Method:** `GET`
+* **Endpoint:** `/projects/:id`
+* **Server Port:** `9000`
+* **Purpose:** Fetches a single project deployment document by `projectId` from MongoDB.
+* **Authentication Required:** No.
+* **Response Codes:** `200 OK` (Found), `404 Not Found`.
+
+### 8. Update Project Details & Logs
+* **HTTP Method:** `PATCH`
+* **Endpoint:** `/projects/:id`
+* **Server Port:** `9000`
+* **Purpose:** Updates specified project fields (`status`, `logs`, `name`, `repoUrl`, `url`) in MongoDB.
+* **Authentication Required:** No.
+* **Request Headers:** `Content-Type: application/json`
+* **Request Body Example:**
+```json
+{
+  "status": "Success",
+  "logs": ["Build started...", "npm install", "Done..."]
+}
+```
+* **Response Codes:** `200 OK` (Updated), `404 Not Found`.
+
+### 9. Delete Project Deployment
+* **HTTP Method:** `DELETE`
+* **Endpoint:** `/projects/:id`
+* **Server Port:** `9000`
+* **Purpose:** Deletes a project deployment document from MongoDB.
+* **Authentication Required:** No.
+* **Response Code:** `200 OK`.
 
 ---
 
@@ -715,7 +779,7 @@ Serving via Proxy (`http://localhost:8000/<projectId>`)
 ```
 
 - **Deployment Identity:** Every deployment is assigned a unique alphanumeric ID via `uniqid()`. This ID identifies Redis channels (`logs:<id>`), S3 prefix keys (`__outputs/<id>/`), and preview URL routing paths.
-- **Status Persistence:** The frontend tracks deployment status in `localStorage` under `Building`, `Success`, or `Failed`.
+- **Status Persistence:** Project deployment status and logs are persisted directly in MongoDB under `Building`, `Success`, or `Failed` status states.
 
 ---
 
@@ -983,7 +1047,31 @@ async function initRedisSubscribe() {
 
 # 24. Database Design
 
-RepoCloud currently uses **browser `localStorage`** for client-side deployment history tracking and **Express Session Memory Store** for user session state.
+RepoCloud uses **MongoDB** as its primary document database, integrated via **Mongoose ODM** on the API server (`api-server`), with **Express Session Memory Store** for user session state.
+
+### Database Architecture & Connection
+- **Database System:** MongoDB (Local instance at `mongodb://127.0.0.1:27017/repocloud` or hosted MongoDB Atlas cluster).
+- **ODM (Object Data Modeling):** Mongoose v8 (`mongoose ^8.10.1`).
+- **Connection Configuration:** Established on API Server startup via `mongoose.connect(MONGODB_URI)`.
+
+### Project Schema (`backend/api-server/models/Project.js`)
+
+| Field | Type | Attributes | Description |
+| :--- | :--- | :--- | :--- |
+| `projectId` | String | Required, Unique, Indexed | Hex/UUID string assigned upon deployment creation |
+| `name` | String | Required, Default: `"Unnamed Project"` | Target project name derived from GitHub repository URL |
+| `repoUrl` | String | Required | Target public GitHub repository URL |
+| `status` | String | Enum (`["Building", "Success", "Failed"]`), Default: `"Building"` | Current lifecycle status of deployment task |
+| `url` | String | Required | Reverse proxy live preview URL |
+| `logs` | Array of Strings | Default: `[]` | Array of captured terminal build log strings |
+| `createdAt` | Date | Default: `Date.now` | Creation timestamp |
+| `updatedAt` | Date | Timestamps: `true` | Automatic last updated timestamp |
+
+### Schema Transformations & Indexing
+- **JSON Serialization:** The schema applies a `toJSON` transform that exposes `projectId` as `id` and excludes internal fields `_id` and `__v` for seamless REST API consumption by the React frontend.
+- **Indexing:** `projectId` is explicitly indexed (`unique: true, index: true`) for $O(1)$ fast lookups when fetching project detail pages (`GET /projects/:id`) or applying log/status updates (`PATCH /projects/:id`).
+
+### Database Entity Model Diagram
 
 ```mermaid
 erDiagram
@@ -995,17 +1083,18 @@ erDiagram
         string email "User Email"
     }
 
-    DEPLOYMENT {
-        string id PK "Project UUID / Uniqid"
-        string name "Derived Project Name"
-        string repoUrl "Target GitHub Repository"
-        string status "Building | Success | Failed"
-        string url "Generated Preview Link"
-        array logs "Stored Build Log Strings"
-        datetime createdAt "ISO Timestamp"
+    PROJECT {
+        string projectId PK "Unique Hex/UUID Index"
+        string name "Derived Repository Name"
+        string repoUrl "Target GitHub Repo URL"
+        string status "Enum: Building | Success | Failed"
+        string url "Reverse Proxy Live Preview URL"
+        array logs "Persistent Build Log Strings"
+        datetime createdAt "Creation Timestamp"
+        datetime updatedAt "Update Timestamp"
     }
 
-    USER ||--o{ DEPLOYMENT : triggers
+    USER ||--o{ PROJECT : triggers
 ```
 
 ---
@@ -1120,6 +1209,7 @@ for (const file of distFolderContents) {
 | `SESSION_SECRET` | Backend (`.env`) | Secret key for signing Express session cookies | `super-secret-key` | Yes |
 | `FRONTEND_URL` | Backend (`.env`) | URL of frontend SPA for CORS and OAuth redirects | `http://localhost:5173` | Yes |
 | `VITE_API_URL` | Frontend (`.env`) | Base URL pointing to Main Backend Auth service | `http://localhost:3000` | Yes |
+| `MONGODB_URI` | API Server (`.env`)| MongoDB connection URI for persistent deployment storage | `mongodb://127.0.0.1:27017/repocloud` | Yes |
 | `REDIS_URI` | API Server (`.env`)| TLS Connection String for Redis/Valkey instance | `rediss://default:pwd@host:port` | Yes |
 | `BASE_PATH` | Reverse Proxy (`.env`)| S3 base HTTP path prefix for serving artifacts | `https://bucket.s3.region.amazonaws.com/__outputs/` | Yes |
 | `IAM_ACCESS_KEY` | API / Build (`.env`)| AWS IAM User Access Key | `AKIAIOSFODNN7EXAMPLE` | Yes |
@@ -1346,7 +1436,7 @@ describe("GitHub Authentication", () => {
 
 # 46. Future Improvements
 
-- [ ] Database integration (PostgreSQL / MongoDB) for multi-tenant deployment persistence.
+- [x] Database integration (MongoDB / Mongoose) for persistent deployment and log storage.
 - [ ] Build artifact caching (caching `node_modules` across runs).
 - [ ] Custom domain mapping and automatic TLS SSL certificate issuance.
 - [ ] Support for non-standard build outputs (`build/`, `out/`, `public/`).

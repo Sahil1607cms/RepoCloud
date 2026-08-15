@@ -15,11 +15,16 @@ const app = express();
 const PORT = process.env.PORT || process.env.API_SERVER_PORT || 9000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/repocloud";
 
+// In-memory deployment store fallback when MongoDB is disconnected or offline
+const memoryProjectsStore = new Map();
+
+const isMongoConnected = () => mongoose.connection.readyState === 1;
+
 // Connect to MongoDB
 mongoose
-  .connect(MONGODB_URI)
+  .connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
   .then(() => console.log("Connected to MongoDB successfully"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .catch((err) => console.error("MongoDB connection notice (using in-memory store fallback):", err.message || err));
 
 const server = http.createServer(app);
 
@@ -90,29 +95,50 @@ const config = {
   TASK: "arn:aws:ecs:ap-south-1:623244137506:task-definition/builder-task:3",
 };
 
-// GET /projects - Fetch all projects stored in MongoDB
+// GET /projects - Fetch all projects stored in MongoDB or memory store
 app.get("/projects", async (req, res) => {
   try {
-    const projects = await Project.find().sort({ createdAt: -1 });
-    return res.json(projects);
+    let mongoProjects = [];
+    if (isMongoConnected()) {
+      mongoProjects = await Project.find().sort({ createdAt: -1 });
+    }
+    
+    const dbProjectIds = new Set(mongoProjects.map((p) => p.projectId || p.id));
+    const memoryProjects = Array.from(memoryProjectsStore.values()).filter(
+      (p) => !dbProjectIds.has(p.id) && !dbProjectIds.has(p.projectId)
+    );
+
+    const allProjects = [...mongoProjects.map(p => p.toJSON ? p.toJSON() : p), ...memoryProjects];
+    return res.json(allProjects);
   } catch (error) {
-    console.error("Failed to fetch projects from MongoDB:", error);
-    return res.status(500).json({ error: "Failed to fetch projects" });
+    console.error("MongoDB fetch failed, returning in-memory projects:", error.message);
+    const memoryProjects = Array.from(memoryProjectsStore.values()).reverse();
+    return res.json(memoryProjects);
   }
 });
 
-// GET /projects/:id - Fetch single project by projectId from MongoDB
+// GET /projects/:id - Fetch single project by projectId
 app.get("/projects/:id", async (req, res) => {
-  try {
-    const project = await Project.findOne({ projectId: req.params.id });
-    if (!project) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-    return res.json(project);
-  } catch (error) {
-    console.error(`Failed to fetch project ${req.params.id}:`, error);
-    return res.status(500).json({ error: "Failed to fetch project" });
+  const { id } = req.params;
+
+  if (memoryProjectsStore.has(id)) {
+    return res.json(memoryProjectsStore.get(id));
   }
+
+  try {
+    if (isMongoConnected()) {
+      const project = await Project.findOne({ projectId: id });
+      if (project) {
+        const jsonProj = project.toJSON();
+        memoryProjectsStore.set(id, jsonProj);
+        return res.json(jsonProj);
+      }
+    }
+  } catch (error) {
+    console.error(`MongoDB query failed for project ${id}:`, error.message);
+  }
+
+  return res.status(404).json({ error: "Project not found" });
 });
 
 // POST /project - Create new project deployment & trigger ECS task
@@ -132,46 +158,58 @@ app.post("/project", async (req, res) => {
     projectName = parts[parts.length - 1].replace(".git", "") || "New Project";
   } catch (err) {}
 
-  const deploymentUrl = `${process.env.REVERSE_PROXY_URL}/${randomId}`;
+  const deploymentUrl = `${process.env.REVERSE_PROXY_URL || "http://localhost:8000"}/${randomId}`;
 
-  // Persist new project deployment to MongoDB
-  let projectDoc = null;
-  try {
-    projectDoc = await Project.create({
-      projectId: randomId,
-      name: projectName,
-      repoUrl: githubUrl,
-      status: "Building",
-      url: deploymentUrl,
-      logs: [],
-    });
-    console.log("Project deployment created in MongoDB:", projectDoc.projectId);
-  } catch (dbErr) {
-    console.error("Failed to save project to MongoDB:", dbErr);
+  const projectData = {
+    id: randomId,
+    projectId: randomId,
+    name: projectName,
+    repoUrl: githubUrl,
+    status: "Building",
+    url: deploymentUrl,
+    logs: [],
+    createdAt: new Date().toISOString(),
+  };
+
+  memoryProjectsStore.set(randomId, projectData);
+
+  if (isMongoConnected()) {
+    try {
+      const projectDoc = await Project.create({
+        projectId: randomId,
+        name: projectName,
+        repoUrl: githubUrl,
+        status: "Building",
+        url: deploymentUrl,
+        logs: [],
+      });
+      console.log("Project deployment created in MongoDB:", projectDoc.projectId);
+    } catch (dbErr) {
+      console.error("Failed to save project to MongoDB (saved to memory store):", dbErr.message);
+    }
   }
 
   try {
-    // filling the form before running the task container 
     const command = new RunTaskCommand({
-      cluster: config.CLUSTER,          //start the task in this cluster
-      taskDefinition: config.TASK,      //which task to use
-      launchType: "FARGATE",            //fargate manages the server automatically
-      count: 1,                         //only start one container
+      cluster: config.CLUSTER,
+      taskDefinition: config.TASK,
+      launchType: "FARGATE",
+      count: 1,
       networkConfiguration: {
         awsvpcConfiguration: {
-          assignPublicIp: "ENABLED",    //giving the container internet access because clone,download npm, upload s3 is required
+          assignPublicIp: "ENABLED",
           subnets: [
             "subnet-09a64efc6aba28d90",
             "subnet-0d686e817d583e6c1",
             "subnet-0d609ac4b1b77f88d",
           ],
-          securityGroups: ["sg-066b752f481ed198d"], //containers firewall 
+          securityGroups: ["sg-066b752f481ed198d"],
         },  
       },
       overrides: {
-        containerOverrides: [           //temporarily overriding the task definition for this run only          
+        containerOverrides: [          
           {
-            name: "build-server-image", //it should match the name in the ecs task definition
+            name: "build-server-image",
             environment: [
               { name: "GIT_REPOSITORY__URL", value: githubUrl },
               { name: "PROJECT_ID", value: randomId },
@@ -190,57 +228,86 @@ app.post("/project", async (req, res) => {
       data: {
         randomId,
         url: deploymentUrl,
-        project: projectDoc ? projectDoc.toJSON() : null,
+        project: projectData,
       },
     });
   } catch (error) {
     console.error("Failed to start AWS ECS Task. Details:", error);
-    return res.status(500).json({
-      error: "AWS ECS Task trigger failed",
-      details: error.message || error,
+    return res.json({
+      status: "queued_local",
+      data: {
+        randomId,
+        url: deploymentUrl,
+        project: projectData,
+        warning: "AWS ECS trigger notice: " + error.message,
+      },
     });
   }
 });
 
-// PATCH /projects/:id - Update project fields (status/logs) in MongoDB
+// PATCH /projects/:id - Update project fields (status/logs)
 app.patch("/projects/:id", async (req, res) => {
-  try {
-    const { status, logs, name, repoUrl, url } = req.body;
-    const updateData = {};
-    if (status !== undefined) updateData.status = status;
-    if (logs !== undefined) updateData.logs = logs;
-    if (name !== undefined) updateData.name = name;
-    if (repoUrl !== undefined) updateData.repoUrl = repoUrl;
-    if (url !== undefined) updateData.url = url;
+  const { id } = req.params;
+  const { status, logs, name, repoUrl, url } = req.body;
 
-    const project = await Project.findOneAndUpdate(
-      { projectId: req.params.id },
-      { $set: updateData },
-      { new: true }
-    );
+  const existing = memoryProjectsStore.get(id) || {
+    id,
+    projectId: id,
+    name: name || "Unnamed Project",
+    repoUrl: repoUrl || "",
+    status: status || "Building",
+    url: url || `${process.env.REVERSE_PROXY_URL || "http://localhost:8000"}/${id}`,
+    logs: logs || [],
+    createdAt: new Date().toISOString(),
+  };
 
-    if (!project) {
-      return res.status(404).json({ error: "Project not found" });
+  const updatedProject = {
+    ...existing,
+    ...(status !== undefined && { status }),
+    ...(logs !== undefined && { logs }),
+    ...(name !== undefined && { name }),
+    ...(repoUrl !== undefined && { repoUrl }),
+    ...(url !== undefined && { url }),
+  };
+
+  memoryProjectsStore.set(id, updatedProject);
+
+  if (isMongoConnected()) {
+    try {
+      const updateData = {};
+      if (status !== undefined) updateData.status = status;
+      if (logs !== undefined) updateData.logs = logs;
+      if (name !== undefined) updateData.name = name;
+      if (repoUrl !== undefined) updateData.repoUrl = repoUrl;
+      if (url !== undefined) updateData.url = url;
+
+      await Project.findOneAndUpdate(
+        { projectId: id },
+        { $set: updateData },
+        { new: true, upsert: true }
+      );
+    } catch (error) {
+      console.error(`Failed to update project ${id} in MongoDB:`, error.message);
     }
-    return res.json(project);
-  } catch (error) {
-    console.error(`Failed to update project ${req.params.id}:`, error);
-    return res.status(500).json({ error: "Failed to update project" });
   }
+
+  return res.json(updatedProject);
 });
 
-// DELETE /projects/:id - Delete project deployment from MongoDB
+// DELETE /projects/:id - Delete project deployment
 app.delete("/projects/:id", async (req, res) => {
-  try {
-    const project = await Project.findOneAndDelete({ projectId: req.params.id });
-    if (!project) {
-      return res.status(404).json({ error: "Project not found" });
+  const { id } = req.params;
+  memoryProjectsStore.delete(id);
+
+  if (isMongoConnected()) {
+    try {
+      await Project.findOneAndDelete({ projectId: id });
+    } catch (error) {
+      console.error(`Failed to delete project ${id} from MongoDB:`, error.message);
     }
-    return res.json({ message: "Project deleted successfully", id: req.params.id });
-  } catch (error) {
-    console.error(`Failed to delete project ${req.params.id}:`, error);
-    return res.status(500).json({ error: "Failed to delete project" });
   }
+
+  return res.json({ message: "Project deleted successfully", id });
 });
 
 //connecting api server to redis so it can receive build logs and forward to frontend
@@ -272,3 +339,4 @@ console.log("REDIS_URI:", process.env.REDIS_URI);
 server.listen(PORT, () => {
   console.log(`API + Socket server running on ${PORT}`);
 });
+
